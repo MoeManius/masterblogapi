@@ -1,10 +1,12 @@
 from flask import Flask, jsonify, request
+from flask_cors import CORS
 
 app = Flask(__name__)
+CORS(app)  # This will enable CORS for all routes
 
 POSTS = [
-    {"id": 1, "title": "First Post", "content": "This is the first post."},
-    {"id": 2, "title": "Second Post", "content": "This is the second post."},
+    {"id": 1, "title": "First post", "content": "This is the first post."},
+    {"id": 2, "title": "Second post", "content": "This is the second post."},
 ]
 
 
@@ -15,10 +17,9 @@ def get_posts():
 
 @app.route('/api/posts', methods=['POST'])
 def add_post():
-    # Get the JSON data from the request
     data = request.get_json()
 
-    # Check if 'title' and 'content' are provided
+    # Ensure title and content are provided
     if not data.get('title') or not data.get('content'):
         missing_fields = []
         if not data.get('title'):
@@ -31,18 +32,47 @@ def add_post():
     # Generate a new unique ID (increment the max ID by 1)
     new_id = max(post["id"] for post in POSTS) + 1
 
-    # Create the new post
     new_post = {
         "id": new_id,
         "title": data["title"],
         "content": data["content"]
     }
 
-    # Add the new post to the POSTS list
     POSTS.append(new_post)
 
-    # Return the newly created post with 201 Created status
     return jsonify(new_post), 201
+
+
+@app.route('/api/posts/<int:id>', methods=['DELETE'])
+def delete_post(id):
+    # Find the post by id
+    post = next((post for post in POSTS if post["id"] == id), None)
+
+    if post:
+        POSTS.remove(post)
+        return jsonify({"message": f"Post with id {id} has been deleted successfully."}), 200
+    else:
+        return jsonify({"error": "Post not found"}), 404
+
+
+@app.route('/api/posts/<int:id>', methods=['PUT'])
+def update_post(id):
+    # Find the post by id
+    post = next((post for post in POSTS if post["id"] == id), None)
+
+    if not post:
+        return jsonify({"error": "Post not found"}), 404
+
+    # Get the updated title and content from the request body
+    data = request.get_json()
+
+    # Update the fields if they are provided
+    if "title" in data:
+        post["title"] = data["title"]
+    if "content" in data:
+        post["content"] = data["content"]
+
+    return jsonify(post), 200
 
 
 if __name__ == '__main__':
