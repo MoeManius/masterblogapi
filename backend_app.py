@@ -1,3 +1,5 @@
+import os
+import json
 from flask import Flask, jsonify, request, abort
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
@@ -7,9 +9,8 @@ from datetime import datetime
 app = Flask(__name__)
 limiter = Limiter(get_remote_address, app=app)
 
-# In-memory storage for blog posts
-posts = []
-next_id = 1
+# File to store blog posts
+POSTS_FILE = 'posts.json'
 
 # Swagger UI setup
 SWAGGER_URL = "/api/docs"
@@ -20,10 +21,28 @@ swagger_ui_blueprint = get_swaggerui_blueprint(
 app.register_blueprint(swagger_ui_blueprint, url_prefix=SWAGGER_URL)
 
 
+def read_posts():
+    """Read posts from the JSON file."""
+    if not os.path.exists(POSTS_FILE):
+        return []
+    try:
+        with open(POSTS_FILE, 'r') as file:
+            return json.load(file)
+    except json.JSONDecodeError:
+        return []
+
+
+def write_posts(posts):
+    """Write posts to the JSON file."""
+    with open(POSTS_FILE, 'w') as file:
+        json.dump(posts, file, indent=4)
+
+
 @app.route('/api/posts', methods=['GET'])
 @limiter.limit("10/minute")
 def list_posts():
     """List all posts, with optional search and sorting."""
+    posts = read_posts()
     sort_by = request.args.get('sort')
     direction = request.args.get('direction', 'asc')
     search_term = request.args.get('search')
@@ -51,8 +70,10 @@ def list_posts():
 @limiter.limit("5/minute")
 def create_post():
     """Create a new blog post."""
-    global next_id
+    posts = read_posts()
+    next_id = max((post['id'] for post in posts), default=0) + 1
     data = request.get_json()
+
     if not data or 'title' not in data or 'content' not in data or 'author' not in data or 'date' not in data:
         abort(400, description="Missing required fields: title, content, author, or date.")
 
@@ -69,7 +90,7 @@ def create_post():
         'date': data['date']
     }
     posts.append(new_post)
-    next_id += 1
+    write_posts(posts)
     return jsonify(new_post), 201
 
 
@@ -77,10 +98,12 @@ def create_post():
 @limiter.limit("5/minute")
 def update_post(post_id):
     """Update a blog post."""
-    data = request.get_json()
+    posts = read_posts()
     post = next((p for p in posts if p['id'] == post_id), None)
     if not post:
         abort(404, description="Post not found.")
+
+    data = request.get_json()
 
     if 'date' in data:
         try:
@@ -92,6 +115,7 @@ def update_post(post_id):
     post['content'] = data.get('content', post['content'])
     post['author'] = data.get('author', post['author'])
     post['date'] = data.get('date', post['date'])
+    write_posts(posts)
     return jsonify(post), 200
 
 
@@ -99,11 +123,13 @@ def update_post(post_id):
 @limiter.limit("5/minute")
 def delete_post(post_id):
     """Delete a blog post."""
-    global posts
+    posts = read_posts()
     post = next((p for p in posts if p['id'] == post_id), None)
     if not post:
         abort(404, description="Post not found.")
+
     posts = [p for p in posts if p['id'] != post_id]
+    write_posts(posts)
     return jsonify({'message': f'Post with id {post_id} has been deleted successfully.'}), 200
 
 
@@ -111,6 +137,7 @@ def delete_post(post_id):
 @limiter.limit("10/minute")
 def search_posts():
     """Search posts by title, content, author, or date."""
+    posts = read_posts()
     title = request.args.get('title')
     content = request.args.get('content')
     author = request.args.get('author')
