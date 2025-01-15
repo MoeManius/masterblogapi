@@ -1,110 +1,122 @@
 from flask import Flask, jsonify, request
-from flask_cors import CORS
+from flask_swagger_ui import get_swaggerui_blueprint
+from werkzeug.exceptions import NotFound, BadRequest
+from flask_limiter import Limiter
 
-app = Flask(__name__)
-CORS(app)  # This will enable CORS for all routes
+app = Flask(__name__, static_folder='static')
 
+# Initialize Rate Limiting
+limiter = Limiter(app)
+
+# Sample data for blog posts
 POSTS = [
-    {"id": 1, "title": "First post", "content": "This is the first post."},
-    {"id": 2, "title": "Second post", "content": "This is the second post."},
-    {"id": 3, "title": "Flask Tutorial", "content": "Learn Flask by building a blog."},
-    {"id": 4, "title": "Blogging 101", "content": "Everything you need to know about blogging."},
+    {"id": 1, "title": "First Post", "content": "This is the first post."},
+    {"id": 2, "title": "Second Post", "content": "This is the second post."}
 ]
 
+# Swagger UI configuration
+SWAGGER_URL = "/api/docs"  # Swagger UI endpoint
+API_URL = "/static/masterblog.json"  # Path to the Swagger JSON file in the static folder
 
+# Initialize Swagger UI blueprint
+swagger_ui_blueprint = get_swaggerui_blueprint(
+    SWAGGER_URL,
+    API_URL,
+    config={
+        'app_name': 'Masterblog API'
+    }
+)
+
+# Register Swagger UI blueprint
+app.register_blueprint(swagger_ui_blueprint, url_prefix=SWAGGER_URL)
+
+# Create a route for the list of posts
 @app.route('/api/posts', methods=['GET'])
+@limiter.limit("10 per minute")  # Example rate limit
 def get_posts():
-    # Get query parameters for sorting
-    sort_by = request.args.get('sort', '')
-    direction = request.args.get('direction', '')
+    sort_field = request.args.get('sort', default=None)
+    sort_direction = request.args.get('direction', default='asc')
 
-    # Validate 'sort' and 'direction' parameters
-    if sort_by and sort_by not in ['title', 'content']:
-        return jsonify({"error": "Invalid sort field. Use 'title' or 'content'."}), 400
+    if sort_field:
+        if sort_field not in ['title', 'content']:
+            return jsonify({"error": "Invalid sort field. Use 'title' or 'content'."}), 400
+        if sort_direction not in ['asc', 'desc']:
+            return jsonify({"error": "Invalid direction. Use 'asc' or 'desc'."}), 400
 
-    if direction and direction not in ['asc', 'desc']:
-        return jsonify({"error": "Invalid direction. Use 'asc' or 'desc'."}), 400
-
-    # If sorting parameters are provided, apply sorting
-    if sort_by:
-        POSTS.sort(key=lambda post: post[sort_by].lower(), reverse=(direction == 'desc'))
+        POSTS.sort(key=lambda x: x[sort_field], reverse=(sort_direction == 'desc'))
 
     return jsonify(POSTS)
 
-
+# Create a route to add a new post
 @app.route('/api/posts', methods=['POST'])
 def add_post():
     data = request.get_json()
 
-    # Ensure title and content are provided
-    if not data.get('title') or not data.get('content'):
-        missing_fields = []
-        if not data.get('title'):
-            missing_fields.append('title')
-        if not data.get('content'):
-            missing_fields.append('content')
+    title = data.get('title')
+    content = data.get('content')
 
-        return jsonify({"error": f"Missing fields: {', '.join(missing_fields)}"}), 400
-
-    # Generate a new unique ID (increment the max ID by 1)
-    new_id = max(post["id"] for post in POSTS) + 1
+    if not title or not content:
+        return jsonify({"error": "Both 'title' and 'content' are required."}), 400
 
     new_post = {
-        "id": new_id,
-        "title": data["title"],
-        "content": data["content"]
+        'id': len(POSTS) + 1,  # Simple ID generation based on the length of the current list
+        'title': title,
+        'content': content
     }
-
     POSTS.append(new_post)
 
     return jsonify(new_post), 201
 
-
+# Create a route to delete a post by ID
 @app.route('/api/posts/<int:id>', methods=['DELETE'])
 def delete_post(id):
-    # Find the post by id
-    post = next((post for post in POSTS if post["id"] == id), None)
-
-    if post:
-        POSTS.remove(post)
-        return jsonify({"message": f"Post with id {id} has been deleted successfully."}), 200
-    else:
-        return jsonify({"error": "Post not found"}), 404
-
-
-@app.route('/api/posts/<int:id>', methods=['PUT'])
-def update_post(id):
-    # Find the post by id
-    post = next((post for post in POSTS if post["id"] == id), None)
+    post = next((post for post in POSTS if post['id'] == id), None)
 
     if not post:
-        return jsonify({"error": "Post not found"}), 404
+        raise NotFound(f"Post with id {id} not found.")
 
-    # Get the updated title and content from the request body
+    POSTS.remove(post)
+    return jsonify({"message": f"Post with id {id} has been deleted successfully."})
+
+# Create a route to update a post by ID
+@app.route('/api/posts/<int:id>', methods=['PUT'])
+def update_post(id):
     data = request.get_json()
+    post = next((post for post in POSTS if post['id'] == id), None)
 
-    # Update the fields if they are provided
-    if "title" in data:
-        post["title"] = data["title"]
-    if "content" in data:
-        post["content"] = data["content"]
+    if not post:
+        raise NotFound(f"Post with id {id} not found.")
 
-    return jsonify(post), 200
+    post['title'] = data.get('title', post['title'])
+    post['content'] = data.get('content', post['content'])
 
+    return jsonify(post)
 
+# Create a route to search posts
 @app.route('/api/posts/search', methods=['GET'])
 def search_posts():
-    title_query = request.args.get('title', '').lower()
-    content_query = request.args.get('content', '').lower()
+    title = request.args.get('title', default=None)
+    content = request.args.get('content', default=None)
 
-    # Filter posts based on title and content queries
-    filtered_posts = [
-        post for post in POSTS
-        if (title_query in post["title"].lower()) or (content_query in post["content"].lower())
-    ]
+    filtered_posts = POSTS
+
+    if title:
+        filtered_posts = [post for post in filtered_posts if title.lower() in post['title'].lower()]
+    if content:
+        filtered_posts = [post for post in filtered_posts if content.lower() in post['content'].lower()]
 
     return jsonify(filtered_posts)
 
+# Error Handling: Handle 404 - Not Found errors
+@app.errorhandler(NotFound)
+def handle_not_found_error(error):
+    return jsonify({"error": str(error)}), 404
 
+# Error Handling: Handle 400 - Bad Request errors
+@app.errorhandler(BadRequest)
+def handle_bad_request_error(error):
+    return jsonify({"error": str(error)}), 400
+
+# Run the Flask app
 if __name__ == '__main__':
-    app.run(host="0.0.0.0", port=5002, debug=True)
+    app.run(debug=True, port=5001)  # Run the app on port 5001
