@@ -4,9 +4,11 @@ from flask import Flask, jsonify, request, abort
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from flask_swagger_ui import get_swaggerui_blueprint
+from flask_cors import CORS
 from datetime import datetime
 
 app = Flask(__name__)
+CORS(app)
 limiter = Limiter(get_remote_address, app=app)
 
 # File to store blog posts
@@ -28,14 +30,18 @@ def read_posts():
     try:
         with open(POSTS_FILE, 'r') as file:
             return json.load(file)
-    except json.JSONDecodeError:
+    except (json.JSONDecodeError, IOError) as e:
+        print(f"Error reading the posts file: {e}")
         return []
 
 
 def write_posts(posts):
     """Write posts to the JSON file."""
-    with open(POSTS_FILE, 'w') as file:
-        json.dump(posts, file, indent=4)
+    try:
+        with open(POSTS_FILE, 'w') as file:
+            json.dump(posts, file, indent=4)
+    except IOError as e:
+        print(f"Error writing to the posts file: {e}")
 
 
 @app.route('/api/posts', methods=['GET'])
