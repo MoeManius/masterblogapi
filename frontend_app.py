@@ -4,11 +4,13 @@ import requests
 
 app = Flask(__name__)
 
-BACKEND_API_URL = 'http://localhost:5002/api/posts'
+BACKEND_API_URL = 'http://10.56.171.105:5002/api/posts'
+
 
 @app.route('/')
 def index():
     return render_template('index.html')
+
 
 @app.route('/api/posts', methods=['GET'])
 def get_posts():
@@ -18,6 +20,7 @@ def get_posts():
         return jsonify(response.json())
     else:
         return jsonify({"error": "Failed to fetch posts"}), response.status_code
+
 
 @app.route('/api/posts', methods=['POST'])
 def create_post():
@@ -34,5 +37,6 @@ def create_post():
     else:
         return jsonify({"error": "Failed to create post"}), response.status_code
 
+
 if __name__ == '__main__':
-    app.run(debug=True, port=5000)
+    app.run(host="0.0.0.0", port=5001, debug=True)

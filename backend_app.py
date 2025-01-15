@@ -6,6 +6,10 @@ from flask_limiter.util import get_remote_address
 from flask_swagger_ui import get_swaggerui_blueprint
 from flask_cors import CORS
 from datetime import datetime
+import logging
+
+# Set up logging
+logging.basicConfig(level=logging.DEBUG)
 
 app = Flask(__name__)
 CORS(app)
@@ -27,11 +31,12 @@ def read_posts():
     """Read posts from the JSON file."""
     if not os.path.exists(POSTS_FILE):
         return []
+
     try:
         with open(POSTS_FILE, 'r') as file:
             return json.load(file)
     except (json.JSONDecodeError, IOError) as e:
-        print(f"Error reading the posts file: {e}")
+        logging.error(f"Error reading the posts file: {e}")
         return []
 
 
@@ -41,7 +46,7 @@ def write_posts(posts):
         with open(POSTS_FILE, 'w') as file:
             json.dump(posts, file, indent=4)
     except IOError as e:
-        print(f"Error writing to the posts file: {e}")
+        logging.error(f"Error writing to the posts file: {e}")
 
 
 @app.route('/api/posts', methods=['GET'])
